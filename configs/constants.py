@@ -19,4 +19,5 @@ typemap = {
     6: float,
 }
 
-FileExtension = ".bin"
+Table_FileExtension = ".bin"
+BASEDir = './data'
