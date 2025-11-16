@@ -17,7 +17,8 @@ class Column():
     #column_marshaler = colmarshal.ColumnMarshaler()
     #column_unmarshaler:colmarshal.ColumnUnmarshaler() # ig this isnt needed will remove this if not used
 
-    
+    def print_col(self):
+        print(f"The column is having {self.name} as the name and {self.datatype} as dtype and {self.allow_null} as Allow null value ")
 
     
 

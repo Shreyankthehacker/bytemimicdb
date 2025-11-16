@@ -3,6 +3,8 @@ from pathlib import Path
 from configs import constants
 import os
 
+import modals.columndefreader
+import modals.reader
 import modals.tables 
 
 class DataBase:
@@ -20,7 +22,7 @@ class DataBase:
         else:
             os.makedirs(self.path)
             
-        # self.tables = self.read_tables()
+        self.tables = self.read_tables()
         # for name,table_object in self.tables:
         #     table_object.restoreWal()
 
@@ -50,4 +52,26 @@ class DataBase:
     
 
     def read_tables(self):
-        pass
+        tables = {}
+
+        for file in self.path.iterdir():     
+            if file.name.endswith('_idx') or file.name.endswith('.wal'):
+                continue
+
+            # Fix: Open the file as BufferedReader
+            opened_file = file.open('rb')
+            r = modals.reader.Reader(opened_file)
+            t = modals.tables.Table(file_path=str(file), reader=r)
+            t.ReadColumnDefinitions()
+
+            tables[t.name] = t
+
+        print("total tables in the db are", list(tables.keys()))
+        return tables
+
+if __name__=='main':
+    db = DataBase("db")
+    columns_map = {"id": modals.columns.Column("id", 1, False),"name":modals.columns.Column("name", 2, False)} 
+    columns_list = ["id","name"]
+    table = db.create_tables("mytable", columns_list, columns_map)
+

@@ -26,33 +26,31 @@ class ColumnMarshaler(TLVMarshaler):
         self.column.allow_null = allowNull
 
     def get_length(self):
-        return (constants.LenByte+ constants.LenInt32+len(constants.ColumnNameLength)+
-                constants.LenByte+constants.LenInt32+self.column.datatype+
-                constants.LenByte+constants.LenInt32+1)  # 1 for allowNull  maybe len(bytes) and stuff but thats not needed ig 
-
-    def marshal_column(self):
-        buffer = io.BytesIO()
-
-        # Outer header (Type + Length)
-        buffer.write(constants.TypeCOLUMNDEF)  # this is already in bytes si directly to the buffer 
-        buffer.write(struct.pack("<i", self.get_length()))  # length of the column type 
-
-        # Field 1: column name
         name_tlv = TLVMarshaler(self.column.name).tlv_marshal()
-        buffer.write(name_tlv)
-
-        # Field 2: datatype
         dtype_tlv = TLVMarshaler(self.column.datatype).tlv_marshal()
-        buffer.write(dtype_tlv)
-
-        # Field 3: allow_null
-        allow_tlv = TLVMarshaler(self.column.allow_null).tlv_marshal()
-        buffer.write(allow_tlv)
-
-        self.column_tlv_encoded = buffer.getvalue()
-        return self.column_tlv_encoded
-
+        null_tlv = TLVMarshaler(self.column.allow_null).tlv_marshal()
+        
+        inner_length = len(name_tlv) + len(dtype_tlv) + len(null_tlv)
+        total_length = inner_length  # only payload, header is added outside
+        return total_length
     
+    def marshal_column(self):
+        name_tlv = TLVMarshaler(self.column.name).tlv_marshal()
+        dtype_tlv = TLVMarshaler(self.column.datatype).tlv_marshal()
+        allow_tlv = TLVMarshaler(self.column.allow_null).tlv_marshal()
+
+        payload = name_tlv + dtype_tlv + allow_tlv
+        total_length = len(payload)
+
+        buffer = io.BytesIO()
+        buffer.write(constants.TypeCOLUMNDEF)                  # b'c\x00\x00\x00'
+        buffer.write(struct.pack("<i", total_length))          # correct length
+        buffer.write(payload)
+
+        result = buffer.getvalue()
+        print(f"Column TLV: {list(result)} (len={len(result)})")
+        return result
+        
     def print_bytes(self):
         print(f"the byte value is {list(self.column_tlv_encoded)}")
         

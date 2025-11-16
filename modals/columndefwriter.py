@@ -7,5 +7,5 @@ class ColumnDefinitionWriter:
 
     def write(self, data: bytes):
         n = self.file.write(data)
-        self.file.flush()
+        # self.file.flush()
         return n

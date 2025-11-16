@@ -12,7 +12,7 @@ import modals.columndefwriter
 import modals.columns
 import modals.reader 
 
-
+import traceback
 
 
 
@@ -28,6 +28,7 @@ class Table:
     _file_path:str 
 
     def __init__(self, file_path= None , reader= None  , wal= None ,columns = None , columnNames= None,recordParser= None  ):
+        ''''Dont pass col def reader coz its done when we pass reader'''
         self._file_path = file_path
         self.file = open(file_path, "r+b")
         self.name = self.getTableName()
@@ -39,6 +40,7 @@ class Table:
         self.columnNames = columnNames # list of string 
         self.recordParser = recordParser
 
+    
     def getTableName(self) -> str:
         # Get filename attribute safely
         filename = getattr(self.file, "name", getattr(self.file, "filename", "unknown"))
@@ -46,7 +48,7 @@ class Table:
         parts = re.split(r'[_ ]+', filename)
         # Take first chunk, remove extension
         base = parts[0].split('.')[0]
-        return base
+        return base.split("/")[-1]
     
     def getColumnNames(self):
         return self.columnNames
@@ -59,20 +61,35 @@ class Table:
 
 
     def ReadColumnDefinitions(self):
-        buffer = bytearray(1024)
-        length_read = self.columnDefReader.read(buffer)
-        # col = modals.columns.Column()
-        col_tlv_decoded = marshaller.colmarshal.ColumnUnmarshaler(buffer[:length_read]).tlv_unmarshal()
-        col = modals.columns.Column(col_tlv_decoded[0],col_tlv_decoded[1],col_tlv_decoded[2])
-        self.columnNames.append(col.name)
-        self.columns[col.name] = col 
-        print("Column has been successfully extracted")
-        return 
+        self.columnNames = []
+        self.columns = {}
+        buffer = bytearray(1024 * 20)  # Larger for full col defs
+        while True:
+            
+            try:
+                buffer[:] = b'\x00' * len(buffer)
+                length_read = self.columnDefReader.read(buffer)
+                if length_read ==0:  
+                    break
+                print(buffer)
+                self.buffer = buffer
+                col_unmarshaler = marshaller.colmarshal.ColumnUnmarshaler(buffer[:length_read])
+                col = col_unmarshaler.unmarshal_column()
+                self.columnNames.append(col.name)
+                self.columns[col.name] = col
+                print(f"Loaded column: {col.name} (type: {constants.typemap.get(col.datatype, 'unknown')}, null: {col.allow_null})")
+            except Exception as e:
+                print(e)
+                traceback.print_exc()
+                return
+                    
+            print(f"Total columns loaded: {len(self.columnNames)}")
 
 
 
 
-
+    def print_table(self):
+        print(f"the table has the name {self.name} with columns {self.columnNames} and file path mm {self._file_path}")
 
         
 
