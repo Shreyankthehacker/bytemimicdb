@@ -15,6 +15,8 @@ import modals.reader
 
 import traceback
 
+import modals.recordparser
+
 
 
 class Table:
@@ -23,24 +25,24 @@ class Table:
     columnNames: Annotated[list[str],"has List of string where each of them is the column name "] # list of the column names
     columns: Annotated[dict[str, modals.columns.Column],"Map or dict which has column name as key and value is the column object itself "]  # map[column name] = modals.column object
     reader: modals.reader.Reader          #  modals.reader class
-    recordParser: Any
+    recordParser:  modals.recordparser.RecordParser
     columnDefReader: modals.columndefreader.ColumnDefReader
     wal: Any
     _file_path:str 
 
-    def __init__(self, file_path= None , reader= None  , wal= None ,columns = None , columnNames= None,recordParser= None  ):
+    def __init__(self, file_path= None ,  wal= None ,columns = None , columnNames= None,recordParser= None  ):
         ''''Dont pass col def reader coz its done when we pass reader'''
         self._file_path = file_path
         self.file = open(file_path, "r+b")
         self.name = self.getTableName()
         self.columns = {}
-        self.reader = reader
+        self.reader = modals.reader.Reader(self.file)
         self.columnDefReader = modals.columndefreader.ColumnDefReader(self.reader)
         self.wal = wal
-        self.columns = columns 
-        self.columnNames = columnNames # list of string 
-        self.recordParser = recordParser
-
+        self.columns = columns if columns is not None else {}
+        self.columnNames = columnNames if columnNames is not None else []
+        
+        self.recordParser = None
     
     def getTableName(self) -> str:
         # Get filename attribute safely
@@ -62,9 +64,11 @@ class Table:
 
 
     def ReadColumnDefinitions(self):
+        self.file.seek(0,io.SEEK_SET)
         self.columnNames = []
         self.columns = {}
         buffer = bytearray(1024 * 20)  # Larger for full col defs
+        print("cmonnnnn mannnn")
         while True:
             
             try:
@@ -80,12 +84,14 @@ class Table:
                 self.columns[col.name] = col
                 print(f"Loaded column: {col.name} (type: {constants.typemap.get(col.datatype, 'unknown')}, null: {col.allow_null})")
             except Exception as e:
+                print("tututudududu")
                 print(e)
                 traceback.print_exc()
                 return
                     
             print(f"Total columns loaded: {len(self.columnNames)}")
-
+        self.recordParser = modals.recordparser.RecordParser(file = self.file ,columns=self.columnNames,reader = self.reader)        
+        # self.ensureFilePointer()
 
 
 
@@ -106,37 +112,90 @@ class Table:
         return None
     
 
-    def insert(self,record):
-        '''record be dictionary'''
-        self.file.seek(0,2) # move the file pointer to the end
-        sizeOfRecord = 0
-        for col in self.columnNames:  # maybe make primary key and stuff
-            if record.get(col) is None:
-                raise ValueError(f"The record doesnt have value for the given column {col}")
-            val = record[col]
-            tlv = marshaller.valmarshal.TLVMarshaler(val)
-            tlv.tlv_marshal()
-            length = tlv.tlv_length()
-            sizeOfRecord+=length
-        
-        buffer = io.BytesIO()
-        typebuffer = tlv.marshal(constants.TypeRECORD)
-        buffer.write(typebuffer)
+    def seek_until(self,targetType):
+        print((type(self.reader)))
+        while(True):
+            try:
+                dtype = self.reader.read_byte()
+            except IOError:
+                return
+            if dtype==targetType:
+                self.file.seek(-1*constants.LenByte,io.SEEK_CUR)
+                return
+            length = self.reader.read_int()
+            self.file.seek(length,io.SEEK_CUR)
 
-        size_buffer = tlv.marshal(sizeOfRecord)
-        buffer.write(size_buffer)
 
-        for col in self.columnNames:
-            val= record[col]
-            tlv_record = tlv.tlv_marshal(val)
-            buffer.write(tlv_record)
 
-        n = self.file.write(buffer.getvalue())
+    def ensureFilePointer(self):
+        self.file.seek(0,io.SEEK_SET)
+        self.seek_until(constants.TypeRECORD)
+        return 
 
-        if n==len(buffer.getvalue()):
-            print("Record registered successfullly to the table")
-        else:
-            raise Exception("Couldnt write to the table")
+
+
+    def insert(self, record):
+            self.file.seek(0, 2)  # end of file
+
+            total_size = 0
+            field_tlvs = []
+
+            for col in self.columnNames:
+                if col not in record:
+                    raise ValueError(f"Missing value for column: {col}")
+                val = record[col]
+                marshaler = marshaller.valmarshal.TLVMarshaler(val)
+                tlv_bytes = marshaler.tlv_marshal()
+                field_tlvs.append(tlv_bytes)
+                total_size += len(tlv_bytes)
+
+            buffer = io.BytesIO()
+            buffer.write(constants.TypeRECORD)      # Type
+            buffer.write(total_size.to_bytes(4, "little"))                # Length
+            for tlv_bytes in field_tlvs:
+                buffer.write(tlv_bytes)
+
+            written = self.file.write(buffer.getvalue())
+            self.file.flush()
+
+            if written == len(buffer.getvalue()):
+                print("Record inserted successfully")
+            else:
+                raise Exception("Partial write during insert")
+    
+    def validateWhereStatement(self,wherestmt):
+        for col,val in wherestmt.items():
+            if col not in self.columns:
+                raise ValueError("UNkwon column in the where statement")
+        return 
+
+    def ensureColumnLength(self,record):
+        if len(record.keys())!=len(self.columnNames):
+            raise ValueError("Column lengths mismatch couldnt retrieve all the column from the table")
+
+    def evaluateWhereStatement(self,wherestmt,record):
+        for key,value in wherestmt.items():
+            if record[key]!=value:
+                return False
+        return True
+
+    def select(self,wherestmt):
+        self.ensureFilePointer()
+        self.validateWhereStatement(wherestmt)
+        results = []
+        while(True):
+            raw = self.recordParser.parse()
+            if raw is None:
+                return results
+            rawrecord = self.recordParser.value
+            self.ensureColumnLength(rawrecord.record)
+            if not self.evaluateWhereStatement(wherestmt,rawrecord.record):
+                continue
+            results.append(rawrecord.record)
+
+
+
+
 
 
 

@@ -45,8 +45,9 @@ class DataBase:
         table = modals.tables.Table(file_path=table_path,
                                     columnNames=columns_list,
                                     columns=columns_map,
-                                    reader=f)
+                                    )
         table.WriteColumnDefinition()
+        table.ReadColumnDefinitions()
         self.tables[name] = table
         return table 
     
@@ -58,12 +59,14 @@ class DataBase:
             if file.name.endswith('_idx') or file.name.endswith('.wal'):
                 continue
 
-            # Fix: Open the file as BufferedReader
-            opened_file = file.open('rb')
-            r = modals.reader.Reader(opened_file)
-            t = modals.tables.Table(file_path=str(file), reader=r)
-            t.ReadColumnDefinitions()
 
+            #opened_file = file.open('r+b')
+            # r = modals.reader.Reader(opened_file)
+            t = modals.tables.Table(file_path=str(file))
+            t.ReadColumnDefinitions()
+            if not t.columnNames:
+                print(f"File {file} does not contain valid column definitions. Skipping.")
+                continue
             tables[t.name] = t
 
         print("total tables in the db are", list(tables.keys()))
