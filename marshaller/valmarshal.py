@@ -71,6 +71,17 @@ class TLVMarshaler(Marshaler):
         print(f"Encoded TLV: {list(tlv)} for value {self.value}")
         self.tlv = tlv
         return tlv
+    
+    def tlv_length(self):
+        if isinstance(self.value,bytes):
+            return constants.LenMeta+constants.LenByte
+        if isinstance(self.value,int):
+            return constants.LenMeta+constants.LenInt32
+        if isinstance(self.value,bool):
+            return constants.LenMeta+constants.LenByte
+        if isinstance(self.value,str):
+            return constants.LenMeta+len(self.value)
+
 
     def print_tlv(self):
         print(f"The value of the encoded bytes is {self.tlv} for the value {self.value}")

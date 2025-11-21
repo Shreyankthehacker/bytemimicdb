@@ -10,6 +10,7 @@ TypeFLOAT = b'\x06'
 # TypeRECORD = b'd\x00\x00\x00'
 LenByte = 1
 LenInt32 = 4
+LenMeta = 5
 LenInt64 = 8
 ColumnType = 99
 typemap = {

@@ -2,6 +2,7 @@ from configs import constants
 from typing import List
 import marshaller
 import marshaller.colmarshal
+import marshaller.valmarshal
 import modals
 import io 
 from typing import Any,Annotated
@@ -92,9 +93,52 @@ class Table:
         print(f"the table has the name {self.name} with columns {self.columnNames} and file path mm {self._file_path}")
 
         
-
-
+    def validate_columns(self,columns):
+        '''expects column name : value kind of dictionary'''
+        for col,value in columns:
+            try:
+                self.columns[col]
+            except KeyError as e:
+                print("No such column found")
+            
+            if self.columns[col].allow_null==False and value ==None:
+                raise IndexError("Column value cant be null")
+        return None
     
+
+    def insert(self,record):
+        '''record be dictionary'''
+        self.file.seek(0,2) # move the file pointer to the end
+        sizeOfRecord = 0
+        for col in self.columnNames:  # maybe make primary key and stuff
+            if record.get(col) is None:
+                raise ValueError(f"The record doesnt have value for the given column {col}")
+            val = record[col]
+            tlv = marshaller.valmarshal.TLVMarshaler(val)
+            tlv.tlv_marshal()
+            length = tlv.tlv_length()
+            sizeOfRecord+=length
+        
+        buffer = io.BytesIO()
+        typebuffer = tlv.marshal(constants.TypeRECORD)
+        buffer.write(typebuffer)
+
+        size_buffer = tlv.marshal(sizeOfRecord)
+        buffer.write(size_buffer)
+
+        for col in self.columnNames:
+            val= record[col]
+            tlv_record = tlv.tlv_marshal(val)
+            buffer.write(tlv_record)
+
+        n = self.file.write(buffer.getvalue())
+
+        if n==len(buffer.getvalue()):
+            print("Record registered successfullly to the table")
+        else:
+            raise Exception("Couldnt write to the table")
+
+
 
 # from Writing Column Definitions is remaining 
 
