@@ -218,6 +218,7 @@ class Table:
                 continue
             if col not in self.columnNames:
                 print(col)
+                #raise KeyError("Wrong col name in the where statement")
                 return -1
         
             
@@ -325,7 +326,32 @@ class Table:
         print(len(rawrecords))
         return 1
 
+    def delete(self,wherestmt = None):
+        self.ensureFilePointer()
+        if wherestmt is not None:
+            r = self.validateWhereStatement(wherestmt)
+            if r==-1:
+                raise KeyError("MMM wrong column name in the where statement")
+        
+        deletablerecords = []
 
+        while True:
+            try:
+                t = self.recordParser.parse_for_update()
+                if t is False:
+                    break     
+                if t == -1:
+                    continue   
+                rawrecord = self.recordParser.value
+                size = self.recordParser.value.fullSize
+                #rawrecords.append(rawrecord.record)
+                print("1 to the rawrecords")
+                pos = self.file.seek(0,io.SEEK_CUR)
+                deletablerecords.append(DeletableRecord(pos-size))
+            except OSError as e:
+                print("mmmm breaking the loop")
+                break
+        return self.markDeleted(deletablerecords)
 
             
 
