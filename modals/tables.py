@@ -20,6 +20,18 @@ import struct
 from pathlib import Path
 
 
+
+class DeletableRecord :
+    offset : int 
+    length  : int 
+
+    def __init__(self,offset= None  , length= None ):
+        self.offset = offset
+        self.length = length
+        
+
+
+
 class Table:
     name: str
     file: io.TextIOWrapper | io.BufferedReader | Any  
@@ -106,11 +118,11 @@ class Table:
         
     def validate_columns(self,columns):
         '''expects column name : value kind of dictionary'''
-        for col,value in columns:
+        for col,value in columns.items():
             try:
                 self.columns[col]
             except KeyError as e:
-                print("No such column found")
+                print("No such column found",e)
             
             if self.columns[col].allow_null==False and value ==None:
                 raise IndexError("Column value cant be null")
@@ -219,8 +231,7 @@ class Table:
 
     def fileter_wherestatement(self,records , wherestmt):
         results = []
-        select_type = wherestmt['_union_type']
-        del wherestmt['_union_type']
+        select_type = wherestmt.pop('_union_type', 'or')
         if  select_type== "and":
 
             return self._and_implementation_of_records(records,wherestmt)
@@ -264,15 +275,61 @@ class Table:
                 return results
             return self.fileter_wherestatement(results , wherestmt)
 # just wanna run a rough check first then will throw the wherestmt
+    
+    def markDeleted(self,records:List[DeletableRecord]):
+        for rec in records:
+            self.file.seek(rec.offset,io.SEEK_SET)
+            self.file.write(struct.pack("<i",constants.TypeDeletedRecord))
+            length = self.reader.read_int()
+            zerobytes = bytearray(length)
+            self.file.write(zerobytes)
+        print(len(records) , " - total records were deleted")
+        return len(records)
+            
 
 
+    def update(self,wherestmt , values : dict):
+        self.validate_columns(values)
+        self.ensureFilePointer()
+        deletablerecords = []
+        rawrecords = []
+        while True:
+            try:
+                t = self.recordParser.parse_for_update()
+                if t is False:
+                    break     
+                if t == -1:
+                    continue   
+                rawrecord = self.recordParser.value
+                size = self.recordParser.value.fullSize
+                rawrecords.append(rawrecord.record)
+                print("1 to the rawrecords")
+                pos = self.file.seek(0,io.SEEK_CUR)
+                deletablerecords.append(DeletableRecord(pos-size))
+            except OSError as e:
+                print("mmmm breaking the loop")
+                break
 
-
-class DeletetableRecord :
-    offset : int 
-    length  : int 
-
-    def __init__(self,offset= None  , length= None ):
-        self.offset = offset
-        self.length = length
+        self.markDeleted(deletablerecords)
         
+        if wherestmt is not None:
+            rawrecords = self.fileter_wherestatement(rawrecords, wherestmt)
+
+
+        for record in rawrecords:
+            updatedrecord = {}
+            for col,value in record.items():
+                updatedrecord[col] = values.get(col,value)
+            self.insert(updatedrecord)
+            print("inserting >>>>",updatedrecord)
+        print(len(rawrecords))
+        return 1
+
+
+
+            
+
+
+
+
+
